@@ -10,6 +10,7 @@ interface VisualizerContextType {
   visualizerType: VisualizerType;
   setVisualizerType: (type: VisualizerType) => void;
   startAudioCapture: () => Promise<void>;
+  error: string | null;
 }
 
 const VisualizerContext = createContext<VisualizerContextType | undefined>(undefined);
@@ -18,6 +19,7 @@ export const VisualizerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioData, setAudioData] = useState<Uint8Array | null>(null);
   const [visualizerType, setVisualizerType] = useState<VisualizerType>('bars');
+  const [error, setError] = useState<string | null>(null);
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -28,8 +30,23 @@ export const VisualizerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const startAudioCapture = async () => {
     try {
+      setError(null);
+      
+      // Check if the browser supports getDisplayMedia
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        setError("Your browser doesn't support system audio capture. Try using Chrome or Edge.");
+        toast.error("Your browser doesn't support system audio capture");
+        return;
+      }
+
       if (!audioContextRef.current) {
+        // Create audio context with a user gesture
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        
+        // Resume audio context if it's suspended
+        if (audioContextRef.current.state === 'suspended') {
+          await audioContextRef.current.resume();
+        }
       }
 
       // Create an audio element to receive system audio via a user gesture
@@ -38,19 +55,30 @@ export const VisualizerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         audioElementRef.current.autoplay = true;
       }
 
-      // Request system audio capture (this will only work if the browser supports it)
+      // Request system audio capture
       try {
+        console.log("Requesting display media with audio...");
+        toast.info("Please select 'Share system audio' in the prompt");
+        
         // Use getDisplayMedia to capture screen with audio
         const stream = await navigator.mediaDevices.getDisplayMedia({ 
-          video: true, 
-          audio: true 
+          video: { 
+            cursor: "never",
+            displaySurface: "monitor",
+          }, 
+          audio: true
         });
+        
+        console.log("Stream obtained:", stream);
+        console.log("Audio tracks:", stream.getAudioTracks().length);
         
         // Extract the audio track
         const audioTrack = stream.getAudioTracks()[0];
         if (!audioTrack) {
           // If no audio track is available, show a warning
-          toast.warning("No audio track detected. Please select a source with audio.");
+          const msg = "No audio track detected. Please select a source with audio and enable 'Share audio'";
+          setError(msg);
+          toast.warning(msg);
           
           // Stop video tracks that might have been created
           stream.getVideoTracks().forEach(track => track.stop());
@@ -67,9 +95,13 @@ export const VisualizerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         
         // Stop video tracks as we only need audio
         stream.getVideoTracks().forEach(track => track.stop());
+        
+        console.log("Audio stream connected to audio element");
       } catch (error) {
         console.error("Error accessing system audio:", error);
-        toast.error("Could not access system audio. Please ensure you select 'Share audio' when prompted.");
+        const msg = "Could not access system audio. Please ensure you select 'Share audio' when prompted.";
+        setError(msg);
+        toast.error(msg);
         return;
       }
 
@@ -84,12 +116,26 @@ export const VisualizerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
 
       // Connect audio element to audio context
-      if (sourceRef.current) {
-        sourceRef.current.disconnect();
+      try {
+        if (sourceRef.current) {
+          sourceRef.current.disconnect();
+        }
+        
+        // Wait for the audio element to be properly initialized
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        sourceRef.current = audioContextRef.current.createMediaElementSource(audioElementRef.current);
+        sourceRef.current.connect(analyserRef.current);
+        analyserRef.current.connect(audioContextRef.current.destination);
+        
+        console.log("Audio pipeline connected successfully");
+      } catch (error) {
+        console.error("Error connecting audio pipeline:", error);
+        const msg = "Error setting up audio processing. Please try again.";
+        setError(msg);
+        toast.error(msg);
+        return;
       }
-      sourceRef.current = audioContextRef.current.createMediaElementSource(audioElementRef.current);
-      sourceRef.current.connect(analyserRef.current);
-      analyserRef.current.connect(audioContextRef.current.destination);
       
       setIsPlaying(true);
       toast.success("System audio capture started");
@@ -106,7 +152,9 @@ export const VisualizerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       updateAudioData();
     } catch (error) {
       console.error("Error setting up audio:", error);
-      toast.error("Could not access system audio. This might not be supported in your browser.");
+      const msg = "Could not access system audio. This might not be supported in your browser.";
+      setError(msg);
+      toast.error(msg);
     }
   };
 
@@ -134,6 +182,7 @@ export const VisualizerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     visualizerType,
     setVisualizerType,
     startAudioCapture,
+    error,
   };
 
   return (
