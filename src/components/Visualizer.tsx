@@ -30,7 +30,7 @@ const Visualizer: React.FC = () => {
         <div className="flex flex-col items-center justify-center h-full">
           <h1 className="text-4xl font-bold mb-6 text-white">Audio Visualizer</h1>
           <p className="text-lg text-gray-300 mb-8 max-w-md text-center">
-            Click the button below to start capturing audio from your device
+            Click the button below to visualize system audio. You'll need to select "Share system audio" when prompted.
           </p>
           <button
             onClick={handleStartClick}

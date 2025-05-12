@@ -22,8 +22,9 @@ export const VisualizerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const dataArrayRef = useRef<Uint8Array | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const animationRef = useRef<number | null>(null);
+  const audioElementRef = useRef<HTMLAudioElement | null>(null);
 
   const startAudioCapture = async () => {
     try {
@@ -31,9 +32,47 @@ export const VisualizerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       }
 
-      // Get user media - this will prompt for audio access
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
+      // Create an audio element to receive system audio via a user gesture
+      if (!audioElementRef.current) {
+        audioElementRef.current = new Audio();
+        audioElementRef.current.autoplay = true;
+      }
+
+      // Request system audio capture (this will only work if the browser supports it)
+      try {
+        // Use getDisplayMedia to capture screen with audio
+        const stream = await navigator.mediaDevices.getDisplayMedia({ 
+          video: true, 
+          audio: true 
+        });
+        
+        // Extract the audio track
+        const audioTrack = stream.getAudioTracks()[0];
+        if (!audioTrack) {
+          // If no audio track is available, show a warning
+          toast.warning("No audio track detected. Please select a source with audio.");
+          
+          // Stop video tracks that might have been created
+          stream.getVideoTracks().forEach(track => track.stop());
+          
+          // Return early as we don't have audio
+          return;
+        }
+        
+        // Create a new MediaStream with only the audio track
+        const audioStream = new MediaStream([audioTrack]);
+        
+        // Connect the audio stream to the audio element
+        audioElementRef.current.srcObject = audioStream;
+        
+        // Stop video tracks as we only need audio
+        stream.getVideoTracks().forEach(track => track.stop());
+      } catch (error) {
+        console.error("Error accessing system audio:", error);
+        toast.error("Could not access system audio. Please ensure you select 'Share audio' when prompted.");
+        return;
+      }
+
       // Create analyser node
       if (!analyserRef.current) {
         analyserRef.current = audioContextRef.current.createAnalyser();
@@ -44,15 +83,16 @@ export const VisualizerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         dataArrayRef.current = new Uint8Array(bufferLength);
       }
 
-      // Connect stream to audio context
+      // Connect audio element to audio context
       if (sourceRef.current) {
         sourceRef.current.disconnect();
       }
-      sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
+      sourceRef.current = audioContextRef.current.createMediaElementSource(audioElementRef.current);
       sourceRef.current.connect(analyserRef.current);
+      analyserRef.current.connect(audioContextRef.current.destination);
       
       setIsPlaying(true);
-      toast.success("Audio capture started");
+      toast.success("System audio capture started");
       
       // Start animation frame to continuously get audio data
       const updateAudioData = () => {
@@ -65,8 +105,8 @@ export const VisualizerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       
       updateAudioData();
     } catch (error) {
-      console.error("Error accessing audio:", error);
-      toast.error("Could not access microphone. Please grant permission to use the audio visualizer.");
+      console.error("Error setting up audio:", error);
+      toast.error("Could not access system audio. This might not be supported in your browser.");
     }
   };
 
@@ -81,6 +121,9 @@ export const VisualizerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       }
       if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
         audioContextRef.current.close();
+      }
+      if (audioElementRef.current) {
+        audioElementRef.current.srcObject = null;
       }
     };
   }, []);
