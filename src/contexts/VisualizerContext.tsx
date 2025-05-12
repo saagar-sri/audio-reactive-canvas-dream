@@ -61,9 +61,9 @@ export const VisualizerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         toast.info("Please select 'Share system audio' in the prompt");
         
         // Use getDisplayMedia to capture screen with audio
+        // Removed 'cursor' property as it's not a valid MediaTrackConstraints property
         const stream = await navigator.mediaDevices.getDisplayMedia({ 
           video: { 
-            cursor: "never",
             displaySurface: "monitor",
           }, 
           audio: true
