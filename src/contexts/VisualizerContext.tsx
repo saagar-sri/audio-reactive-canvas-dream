@@ -95,8 +95,12 @@ export const VisualizerProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         
         // Connect the media stream to the audio context
         sourceRef.current = audioContextRef.current.createMediaStreamSource(streamRef.current);
+        
+        // Only connect to analyser, not to the destination (prevents double audio)
         sourceRef.current.connect(analyserRef.current);
-        analyserRef.current.connect(audioContextRef.current.destination);
+        
+        // Remove this line to prevent double audio:
+        // analyserRef.current.connect(audioContextRef.current.destination);
         
         console.log("Audio pipeline connected successfully");
         setIsPlaying(true);
